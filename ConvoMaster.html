@@ -1153,53 +1153,110 @@ function stopSpeaking() {
   window.speechSynthesis.cancel();
 }
 
-function useSpeechRecognition(lang) {
+function useSpeechRecognition(lang, apiKey) {
   const [transcript, setTranscript] = useState('');
   const [interimText, setInterimText] = useState('');
   const [listening, setListening] = useState(false);
-  const recRef = useRef(null);
-  const fullTextRef = useRef('');
+  const [processing, setProcessing] = useState(false);
+  const mediaRecRef = useRef(null);
+  const chunksRef = useRef([]);
+  const streamRef = useRef(null);
+  const timerRef = useRef(null);
+  const secondsRef = useRef(0);
 
-  const startListening = useCallback(() => {
-    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!SR) { alert("음성 인식이 지원되지 않는 브라우저입니다."); return; }
-    const rec = new SR();
-    rec.lang = lang === "en" ? "en-US" : "ja-JP";
-    rec.interimResults = true;
-    rec.continuous = true;
-    rec.maxAlternatives = 1;
-    fullTextRef.current = '';
-    rec.onresult = (e) => {
-      let final = '';
-      let interim = '';
-      for (let i = 0; i < e.results.length; i++) {
-        if (e.results[i].isFinal) {
-          final += e.results[i][0].transcript;
-        } else {
-          interim += e.results[i][0].transcript;
+  const startListening = useCallback(async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      streamRef.current = stream;
+
+      // MediaRecorder 설정 - iOS Safari 호환
+      const mimeType = MediaRecorder.isTypeSupported('audio/webm') ? 'audio/webm' : 'audio/mp4';
+      const recorder = new MediaRecorder(stream, { mimeType });
+      chunksRef.current = [];
+
+      recorder.ondataavailable = (e) => {
+        if (e.data.size > 0) chunksRef.current.push(e.data);
+      };
+
+      recorder.onstop = async () => {
+        // 마이크 스트림 종료
+        stream.getTracks().forEach(t => t.stop());
+        clearInterval(timerRef.current);
+        secondsRef.current = 0;
+
+        if (chunksRef.current.length === 0) {
+          setListening(false);
+          return;
         }
-      }
-      fullTextRef.current = final;
-      setInterimText(final + interim);
-    };
-    rec.onend = () => {
-      setListening(false);
-      const finalText = fullTextRef.current;
-      if (finalText.trim()) setTranscript(finalText.trim());
-    };
-    rec.onerror = () => setListening(false);
-    recRef.current = rec;
-    setInterimText('');
-    setTranscript('');
-    setListening(true);
-    rec.start();
-  }, [lang]);
+
+        // Whisper API로 전송
+        setProcessing(true);
+        setInterimText(lang === 'en' ? 'Recognizing...' : '認識中...');
+        try {
+          const blob = new Blob(chunksRef.current, { type: mimeType });
+          const ext = mimeType.includes('webm') ? 'webm' : 'mp4';
+          const formData = new FormData();
+          formData.append('file', blob, `audio.${ext}`);
+          formData.append('model', 'whisper-1');
+          formData.append('language', lang === 'en' ? 'en' : 'ja');
+
+          const res = await fetch('https://api.openai.com/v1/audio/transcriptions', {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${apiKey}` },
+            body: formData
+          });
+
+          if (res.ok) {
+            const data = await res.json();
+            const text = data.text?.trim();
+            if (text) {
+              setTranscript(text);
+              setInterimText('');
+            } else {
+              setInterimText('');
+            }
+          } else {
+            const err = await res.json().catch(() => ({}));
+            console.log('Whisper error:', err);
+            setInterimText('⚠️ 인식 실패');
+            setTimeout(() => setInterimText(''), 2000);
+          }
+        } catch (e) {
+          console.log('Whisper error:', e);
+          setInterimText('⚠️ 인식 실패');
+          setTimeout(() => setInterimText(''), 2000);
+        }
+        setProcessing(false);
+        setListening(false);
+      };
+
+      mediaRecRef.current = recorder;
+      recorder.start(1000); // 1초마다 chunk 수집
+      setListening(true);
+      setTranscript('');
+      secondsRef.current = 0;
+      setInterimText(lang === 'en' ? '🎤 Recording...' : '🎤 録音中...');
+
+      // 녹음 시간 표시
+      timerRef.current = setInterval(() => {
+        secondsRef.current++;
+        const s = secondsRef.current;
+        setInterimText(`🎤 ${s}s ${lang === 'en' ? 'Recording...' : '録音中...'}`);
+      }, 1000);
+
+    } catch (e) {
+      alert(lang === 'en' ? 'Microphone access denied. Please allow microphone permission.' : 'マイクへのアクセスが拒否されました。マイクの許可を許可してください。');
+      console.log('Mic error:', e);
+    }
+  }, [lang, apiKey]);
 
   const stopListening = useCallback(() => {
-    if (recRef.current) recRef.current.stop();
+    if (mediaRecRef.current && mediaRecRef.current.state === 'recording') {
+      mediaRecRef.current.stop();
+    }
   }, []);
 
-  return { transcript, setTranscript, interimText, listening, startListening, stopListening };
+  return { transcript, setTranscript, interimText, listening, processing, startListening, stopListening };
 }
 
 // ═══════════════════════════════════════════════════════
@@ -1295,7 +1352,7 @@ function App() {
   const chatEndRef = useRef(null);
 
   // Speech
-  const { transcript, setTranscript, interimText, listening, startListening, stopListening } = useSpeechRecognition(lang);
+  const { transcript, setTranscript, interimText, listening, processing, startListening, stopListening } = useSpeechRecognition(lang, apiKey);
   const [textInput, setTextInput] = useState('');
 
   // Auto-scroll
@@ -1509,16 +1566,16 @@ function App() {
             <div ref={chatEndRef}></div>
           </div>
           <div style={S.inputWrap}>
-            <button style={S.iconBtn(listening,'#ef4444')} onClick={listening?stopListening:startListening}>
-              {listening?'⏹':'🎤'}
+            <button style={S.iconBtn(listening||processing, listening?'#ef4444':'#f59e0b')} onClick={listening?stopListening:startListening} disabled={processing||!apiKey}>
+              {processing?'⏳':listening?'⏹':'🎤'}
             </button>
             <input
-              style={{...S.textInput, ...(listening?{borderColor:'#ef4444'}:{})}}
-              value={listening ? (interimText || textInput) : textInput}
+              style={{...S.textInput, ...((listening||processing)?{borderColor: listening?'#ef4444':'#f59e0b'}:{})}}
+              value={(listening||processing) ? (interimText || textInput) : textInput}
               onChange={e=>setTextInput(e.target.value)}
               onKeyDown={e=>e.key==='Enter'&&sendMessage()}
-              placeholder={listening ? (lang==='en'?'Listening...':'聞いています...') : (lang==='en'?'Type or speak...':'入力または音声...')}
-              readOnly={listening}
+              placeholder={listening ? (lang==='en'?'🎤 Recording... tap ⏹ to stop':'🎤 録音中... ⏹を押して停止') : processing ? (lang==='en'?'Recognizing...':'認識中...') : (lang==='en'?'Type or speak...':'入力または音声...')}
+              readOnly={listening||processing}
             />
             <button style={S.iconBtn(false,'#3b82f6')} onClick={sendMessage}>➤</button>
             <button style={S.endBtn} onClick={goReview}>
