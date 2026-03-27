@@ -1327,6 +1327,7 @@ function App() {
     try { return localStorage.getItem('convomaster_apikey') || ''; } catch(e) { return ''; }
   });
   const [showSettings, setShowSettings] = useState(false);
+  const modalJustOpened = useRef(false);
   const [tempKey, setTempKey] = useState('');
 
   // Conversation state
@@ -1352,7 +1353,7 @@ function App() {
   async function sendMessage() {
     const text = textInput.trim();
     if (!text || aiLoading) return;
-    if (!apiKey) { setShowSettings(true); return; }
+    if (!apiKey) { modalJustOpened.current=true; setShowSettings(true); setTimeout(()=>{modalJustOpened.current=false;},400); return; }
     setTextInput('');
     setTranscript('');
 
@@ -1435,7 +1436,7 @@ function App() {
             {screen === 'conversation' && selectedScen && selectedScen.t[lang]}
             {screen === 'review' && (lang==='en'?'Review':'復習')}
           </span>
-          <button style={S.settingsBtn} onTouchEnd={(e)=>{e.preventDefault();setTempKey(apiKey);setShowSettings(true)}} onClick={() => { setTempKey(apiKey); setShowSettings(true); }}>⚙️</button>
+          <button style={S.settingsBtn} onTouchEnd={(e)=>{e.preventDefault();e.stopPropagation();modalJustOpened.current=true;setTempKey(apiKey);setShowSettings(true);setTimeout(()=>{modalJustOpened.current=false;},400);}} onClick={() => { modalJustOpened.current=true; setTempKey(apiKey); setShowSettings(true); setTimeout(()=>{modalJustOpened.current=false;},400); }}>⚙️</button>
         </div>
       )}
 
@@ -1461,7 +1462,7 @@ function App() {
           <button style={S.startBtn} onClick={goLocations}>
             {lang==='en'?'Start Practice':'練習を始める'} →
           </button>
-          <button style={{...S.startBtn, background:'#334155', marginTop:'0'}} onTouchEnd={(e)=>{e.preventDefault();setTempKey(apiKey);setShowSettings(true)}} onClick={() => { setTempKey(apiKey); setShowSettings(true); }}>
+          <button style={{...S.startBtn, background:'#334155', marginTop:'0'}} onTouchEnd={(e)=>{e.preventDefault();e.stopPropagation();modalJustOpened.current=true;setTempKey(apiKey);setShowSettings(true);setTimeout(()=>{modalJustOpened.current=false;},400);}} onClick={() => { modalJustOpened.current=true; setTempKey(apiKey); setShowSettings(true); setTimeout(()=>{modalJustOpened.current=false;},400); }}>
             ⚙️ API Key 설정
           </button>
         </div>
@@ -1556,8 +1557,8 @@ function App() {
 
       {/* SETTINGS MODAL */}
       {showSettings && (
-        <div style={S.overlay} onMouseDown={(e)=>{if(e.target===e.currentTarget)setShowSettings(false)}} onTouchEnd={(e)=>{if(e.target===e.currentTarget){e.preventDefault();setShowSettings(false)}}}>
-          <div style={S.modal} onMouseDown={e=>e.stopPropagation()} onTouchEnd={e=>e.stopPropagation()}>
+        <div style={S.overlay} onMouseDown={(e)=>{if(e.target===e.currentTarget&&!modalJustOpened.current)setShowSettings(false)}} onTouchEnd={(e)=>{if(e.target===e.currentTarget&&!modalJustOpened.current){e.preventDefault();setShowSettings(false)}}}>
+          <div style={S.modal} onMouseDown={e=>e.stopPropagation()} onTouchEnd={e=>{e.stopPropagation();}}>
             <div style={S.modalTitle}>⚙️ OpenAI API Key 설정</div>
             <input
               style={S.modalInput}
