@@ -1096,60 +1096,42 @@ function parseAIResponse(text) {
 }
 
 // ═══════════════════════════════════════════════════════
-// 🗣️ SPEECH UTILITIES (OpenAI TTS + fallback)
+// 🗣️ SPEECH UTILITIES (Google TTS - 브라우저 내장 고품질 음성)
 // ═══════════════════════════════════════════════════════
-let currentAudio = null;
-let speakingId = 0; // 중복 재생 방지용
+let cachedVoices = {};
 
-async function speak(text, lang, apiKey) {
-  // 이전 재생 모두 중지
+function getBestVoice(lang) {
+  const langCode = lang === "en" ? "en" : "ja";
+  if (cachedVoices[langCode]) return cachedVoices[langCode];
+  const voices = window.speechSynthesis.getVoices();
+  if (!voices.length) return null;
+
+  // 우선순위: Google > Microsoft > Apple > 기타
+  const langVoices = voices.filter(v => v.lang.startsWith(langCode));
+  const google = langVoices.find(v => v.name.includes('Google'));
+  const microsoft = langVoices.find(v => v.name.includes('Microsoft'));
+  const premium = langVoices.find(v => v.name.includes('Premium') || v.name.includes('Enhanced') || v.name.includes('Natural'));
+  const best = google || premium || microsoft || langVoices[0] || null;
+  if (best) cachedVoices[langCode] = best;
+  return best;
+}
+
+// 음성 목록 미리 로드
+window.speechSynthesis.onvoiceschanged = () => { cachedVoices = {}; };
+window.speechSynthesis.getVoices();
+
+function speak(text, lang) {
   stopSpeaking();
-  const myId = ++speakingId; // 고유 ID 부여
-
-  // OpenAI TTS 시도 (API Key가 있을 때)
-  if (apiKey) {
-    try {
-      const res = await fetch("https://api.openai.com/v1/audio/speech", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${apiKey}`
-        },
-        body: JSON.stringify({
-          model: "tts-1",
-          input: text,
-          voice: "nova",
-          speed: 0.9
-        })
-      });
-      if (myId !== speakingId) return; // 새 요청이 들어왔으면 무시
-      if (res.ok) {
-        const blob = await res.blob();
-        if (myId !== speakingId) return; // 새 요청이 들어왔으면 무시
-        const url = URL.createObjectURL(blob);
-        const audio = new Audio(url);
-        currentAudio = audio;
-        audio.onended = () => { URL.revokeObjectURL(url); if (currentAudio === audio) currentAudio = null; };
-        audio.play();
-        return;
-      }
-    } catch (e) {
-      if (myId !== speakingId) return;
-      console.log("OpenAI TTS failed, falling back to browser TTS:", e);
-    }
-  }
-
-  // Fallback: 브라우저 내장 TTS
-  if (myId !== speakingId) return;
   const u = new SpeechSynthesisUtterance(text);
   u.lang = lang === "en" ? "en-US" : "ja-JP";
-  u.rate = 0.85;
+  u.rate = 0.9;
+  u.pitch = 1.0;
+  const voice = getBestVoice(lang);
+  if (voice) u.voice = voice;
   window.speechSynthesis.speak(u);
 }
 
 function stopSpeaking() {
-  speakingId++;
-  if (currentAudio) { currentAudio.pause(); currentAudio = null; }
   window.speechSynthesis.cancel();
 }
 
@@ -1380,6 +1362,7 @@ function App() {
       setConversationHistory(prev => [...prev, { role:'assistant', content: parsed.conversation }]);
       if (parsed.feedback) setAllFeedback(prev => [...prev, { userText: text, feedback: parsed.feedback, suggestions: parsed.suggestions }]);
       if (parsed.vocabulary) setAllVocabulary(prev => [...prev, parsed.vocabulary]);
+      speak(parsed.conversation, lang);
     }).catch(err => {
       const errMsg = { role:'assistant', content: `⚠️ Error: ${err.message}`, parsed: { conversation:`⚠️ ${err.message}`, feedback:'', suggestions:'', vocabulary:'' } };
       setMessages(prev => [...prev, errMsg]);
@@ -1403,6 +1386,8 @@ function App() {
     setAllFeedback([]);
     setAllVocabulary([]);
     setScreen('conversation');
+    // 첫 인사말 자동 재생
+    setTimeout(() => speak(scenario.s[lang], lang), 300);
   }
 
   // Send message
@@ -1428,6 +1413,7 @@ function App() {
       setConversationHistory(prev => [...prev, { role:'assistant', content: parsed.conversation }]);
       if (parsed.feedback) setAllFeedback(prev => [...prev, { userText: text, feedback: parsed.feedback, suggestions: parsed.suggestions }]);
       if (parsed.vocabulary) setAllVocabulary(prev => [...prev, parsed.vocabulary]);
+      speak(parsed.conversation, lang);
     } catch (err) {
       const errMsg = { role:'assistant', content: `⚠️ Error: ${err.message}`, parsed: { conversation:`⚠️ ${err.message}`, feedback:'', suggestions:'', vocabulary:'' } };
       setMessages(prev => [...prev, errMsg]);
@@ -1541,7 +1527,7 @@ function App() {
                 <div style={S.msgText(msg.role==='user')}>
                   {msg.parsed ? msg.parsed.conversation : msg.content}
                   {msg.role==='assistant' && (
-                    <button style={S.speakBtn} onClick={()=>speak(msg.parsed?.conversation||msg.content, lang, apiKey)}>🔊</button>
+                    <button style={S.speakBtn} onClick={()=>speak(msg.parsed?.conversation||msg.content, lang)}>🔊</button>
                   )}
                 </div>
                 {msg.parsed?.feedback && (
@@ -1586,7 +1572,7 @@ function App() {
       )}
 
       {/* REVIEW */}
-      {screen === 'review' && <ReviewScreen messages={messages} allFeedback={allFeedback} allVocabulary={allVocabulary} lang={lang} scenario={selectedScen} apiKey={apiKey} />}
+      {screen === 'review' && <ReviewScreen messages={messages} allFeedback={allFeedback} allVocabulary={allVocabulary} lang={lang} scenario={selectedScen} />}
 
       {/* SETTINGS MODAL */}
       {showSettings && (
@@ -1619,7 +1605,7 @@ function App() {
 // ═══════════════════════════════════════════════════════
 // 📋 REVIEW SCREEN COMPONENT
 // ═══════════════════════════════════════════════════════
-function ReviewScreen({ messages, allFeedback, allVocabulary, lang, scenario, apiKey }) {
+function ReviewScreen({ messages, allFeedback, allVocabulary, lang, scenario }) {
   const [tab, setTab] = useState('script');
   const tabs = [
     { id:'script', label: lang==='en'?'Script':'スクリプト' },
@@ -1652,7 +1638,7 @@ function ReviewScreen({ messages, allFeedback, allVocabulary, lang, scenario, ap
               <div style={{fontSize:'10px',color:'#64748b',marginBottom:'4px'}}>{msg.role==='user'?'🧑 You':'🤖 Partner'}</div>
               <div style={S.reviewMsg(msg.role==='user')}>
                 {msg.parsed ? msg.parsed.conversation : msg.content}
-                <button style={S.speakBtn} onClick={()=>speak(msg.parsed?.conversation||msg.content, lang, apiKey)}>🔊</button>
+                <button style={S.speakBtn} onClick={()=>speak(msg.parsed?.conversation||msg.content, lang)}>🔊</button>
               </div>
             </div>
           ))}
