@@ -1,0 +1,11 @@
+{
+  "version": 2,
+  "builds": [
+    { "src": "ConvoMaster.html", "use": "@vercel/static" },
+    { "src": "manifest.json", "use": "@vercel/static" }
+  ],
+  "routes": [
+    { "src": "/", "dest": "/ConvoMaster.html" },
+    { "src": "/manifest.json", "dest": "/manifest.json" }
+  ]
+}
