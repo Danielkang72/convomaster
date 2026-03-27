@@ -1,0 +1,719 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#0f172a">
+<meta name="description" content="ConvoMaster - AI 회화 연습 앱">
+<link rel="manifest" href="manifest.json">
+<title>ConvoMaster - AI 회화 학습</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; background: #0f172a; color: #e2e8f0; overflow-x: hidden; }
+input, textarea { font-family: inherit; }
+button { font-family: inherit; cursor: pointer; }
+::-webkit-scrollbar { width: 4px; }
+::-webkit-scrollbar-track { background: #1e293b; }
+::-webkit-scrollbar-thumb { background: #475569; border-radius: 2px; }
+@keyframes typing { 0%,80%,100%{opacity:.3} 40%{opacity:1} }
+@keyframes fadeIn { from{opacity:0;transform:translateY(8px)} to{opacity:1;transform:translateY(0)} }
+@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.5} }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.9/babel.min.js"></script>
+
+<script type="text/babel">
+const { useState, useEffect, useRef, useCallback } = React;
+
+// ═══════════════════════════════════════════════════════
+// 📍 30 LOCATIONS
+// ═══════════════════════════════════════════════════════
+const LOCATIONS = [
+  { id:1, name:{en:"Hotel",ja:"ホテル"}, icon:"🏨" },
+  { id:2, name:{en:"Airport",ja:"空港"}, icon:"✈️" },
+  { id:3, name:{en:"Restaurant",ja:"レストラン"}, icon:"🍽️" },
+  { id:4, name:{en:"Cafe",ja:"カフェ"}, icon:"☕" },
+  { id:5, name:{en:"School",ja:"学校"}, icon:"🏫" },
+  { id:6, name:{en:"Street",ja:"通り"}, icon:"🛣️" },
+  { id:7, name:{en:"Supermarket",ja:"スーパー"}, icon:"🛒" },
+  { id:8, name:{en:"Hospital",ja:"病院"}, icon:"🏥" },
+  { id:9, name:{en:"Bank",ja:"銀行"}, icon:"🏦" },
+  { id:10, name:{en:"Post Office",ja:"郵便局"}, icon:"📮" },
+  { id:11, name:{en:"Pharmacy",ja:"薬局"}, icon:"💊" },
+  { id:12, name:{en:"Bus Stop",ja:"バス停"}, icon:"🚌" },
+  { id:13, name:{en:"Train Station",ja:"駅"}, icon:"🚉" },
+  { id:14, name:{en:"Taxi",ja:"タクシー"}, icon:"🚕" },
+  { id:15, name:{en:"Shopping Mall",ja:"ショッピングモール"}, icon:"🏬" },
+  { id:16, name:{en:"Bookstore",ja:"本屋"}, icon:"📚" },
+  { id:17, name:{en:"Gym",ja:"ジム"}, icon:"🏋️" },
+  { id:18, name:{en:"Park",ja:"公園"}, icon:"🌳" },
+  { id:19, name:{en:"Museum",ja:"美術館"}, icon:"🖼️" },
+  { id:20, name:{en:"Movie Theater",ja:"映画館"}, icon:"🎬" },
+  { id:21, name:{en:"Gas Station",ja:"ガソリンスタンド"}, icon:"⛽" },
+  { id:22, name:{en:"Laundromat",ja:"コインランドリー"}, icon:"🧺" },
+  { id:23, name:{en:"Hair Salon",ja:"美容院"}, icon:"💇" },
+  { id:24, name:{en:"Real Estate Office",ja:"不動産屋"}, icon:"🏠" },
+  { id:25, name:{en:"Police Station",ja:"交番"}, icon:"👮" },
+  { id:26, name:{en:"Library",ja:"図書館"}, icon:"📖" },
+  { id:27, name:{en:"Bar / Pub",ja:"バー"}, icon:"🍺" },
+  { id:28, name:{en:"Convenience Store",ja:"コンビニ"}, icon:"🏪" },
+  { id:29, name:{en:"Office",ja:"オフィス"}, icon:"🏢" },
+  { id:30, name:{en:"Beach",ja:"ビーチ"}, icon:"🏖️" },
+];
+
+// ═══════════════════════════════════════════════════════
+// 📋 100 SCENARIOS (compact format for AI conversation)
+// ═══════════════════════════════════════════════════════
+const SCENARIOS = [
+  // Hotel (1)
+  {id:1,lid:1,t:{en:"Checking In",ja:"チェックイン"},s:{en:"Good afternoon! Welcome to Grand Hotel. Do you have a reservation?",ja:"こんにちは！グランドホテルへようこそ。ご予約はございますか？"},c:"hotel front desk check-in"},
+  {id:2,lid:1,t:{en:"Requesting Extra Towels",ja:"タオルの追加"},s:{en:"Hello, this is the front desk. How can I help you?",ja:"はい、フロントでございます。何かお手伝いできますか？"},c:"hotel room service towels request"},
+  {id:3,lid:1,t:{en:"Checking Out",ja:"チェックアウト"},s:{en:"Good morning! Are you ready to check out?",ja:"おはようございます！チェックアウトでよろしいですか？"},c:"hotel checkout billing"},
+  {id:4,lid:1,t:{en:"Complaining About Noise",ja:"騒音のクレーム"},s:{en:"Front desk, how may I assist you tonight?",ja:"フロントです。今夜はどうされましたか？"},c:"hotel noise complaint room change"},
+  // Airport (2)
+  {id:5,lid:2,t:{en:"Check-in Counter",ja:"チェックインカウンター"},s:{en:"Good morning! May I see your passport and booking reference?",ja:"おはようございます！パスポートと予約番号を拝見できますか？"},c:"airport check-in counter luggage"},
+  {id:6,lid:2,t:{en:"Going Through Security",ja:"セキュリティ通過"},s:{en:"Please place your bags on the belt and remove any electronics.",ja:"荷物をベルトに置いて電子機器を出してください。"},c:"airport security screening"},
+  {id:7,lid:2,t:{en:"At the Gate",ja:"搭乗ゲート"},s:{en:"Attention passengers: Flight KE302 to Seoul is now boarding at Gate 15.",ja:"お知らせ：ソウル行きKE302便はゲート15から搭乗を開始します。"},c:"airport boarding gate announcement"},
+  {id:8,lid:2,t:{en:"Lost Luggage",ja:"荷物紛失"},s:{en:"I'm sorry to hear that. Can you describe your luggage for me?",ja:"それは大変でしたね。お荷物の特徴を教えていただけますか？"},c:"airport lost luggage claim"},
+  // Restaurant (3)
+  {id:9,lid:3,t:{en:"Making a Reservation",ja:"レストラン予約"},s:{en:"Thank you for calling Mario's. How can I help you?",ja:"マリオズにお電話ありがとうございます。ご用件は？"},c:"restaurant phone reservation"},
+  {id:10,lid:3,t:{en:"Ordering Food",ja:"料理の注文"},s:{en:"Welcome! Are you ready to order, or do you need a few more minutes?",ja:"いらっしゃいませ！ご注文はお決まりですか？"},c:"restaurant ordering menu"},
+  {id:11,lid:3,t:{en:"Asking About Allergies",ja:"アレルギーの確認"},s:{en:"Our special today is shrimp pasta. Would you like to try it?",ja:"本日のおすすめはエビパスタです。いかがですか？"},c:"restaurant food allergy dietary"},
+  {id:12,lid:3,t:{en:"Paying the Bill",ja:"お会計"},s:{en:"I hope you enjoyed your meal! Would you like the check?",ja:"お食事はいかがでしたか？お会計でよろしいですか？"},c:"restaurant bill payment tip"},
+  // Cafe (4)
+  {id:13,lid:4,t:{en:"Ordering Coffee",ja:"コーヒー注文"},s:{en:"Hi there! What can I get started for you today?",ja:"こんにちは！ご注文は何にされますか？"},c:"cafe coffee order drinks"},
+  {id:14,lid:4,t:{en:"Customizing Your Drink",ja:"ドリンクのカスタマイズ"},s:{en:"Sure, what size would you like? We have small, medium, and large.",ja:"サイズはいかがなさいますか？S、M、Lがございます。"},c:"cafe drink customization milk sugar"},
+  {id:15,lid:4,t:{en:"Asking About Wi-Fi",ja:"Wi-Fiの利用"},s:{en:"Is there anything else I can help you with?",ja:"他にご用はございますか？"},c:"cafe wifi password seating"},
+  // School (5)
+  {id:16,lid:5,t:{en:"First Day Introduction",ja:"初日の自己紹介"},s:{en:"Welcome to the class! Would you like to introduce yourself?",ja:"クラスへようこそ！自己紹介をお願いできますか？"},c:"school classroom introduction"},
+  {id:17,lid:5,t:{en:"Asking a Question in Class",ja:"授業中の質問"},s:{en:"Does anyone have any questions about today's topic?",ja:"今日の内容について質問はありますか？"},c:"school class question academic"},
+  {id:18,lid:5,t:{en:"Talking to a Classmate",ja:"クラスメートとの会話"},s:{en:"Hey, I don't think we've met. Are you new here too?",ja:"ねえ、初めましてだよね。あなたも新入生？"},c:"school classmate friendship"},
+  // Street (6)
+  {id:19,lid:6,t:{en:"Asking for Directions",ja:"道を尋ねる"},s:{en:"Excuse me, you look a bit lost. Can I help you find something?",ja:"すみません、迷っているようですね。何かお探しですか？"},c:"street directions navigation"},
+  {id:20,lid:6,t:{en:"Street Food Vendor",ja:"屋台での買い物"},s:{en:"Hey! Try our famous hot dogs! Best in the city!",ja:"いらっしゃい！名物ホットドッグはいかが？街一番の味だよ！"},c:"street food vendor ordering"},
+  {id:21,lid:6,t:{en:"Talking to a Stranger",ja:"見知らぬ人との会話"},s:{en:"Beautiful day, isn't it? Do you live around here?",ja:"いい天気ですね。この辺にお住まいですか？"},c:"street casual conversation stranger"},
+  // Supermarket (7)
+  {id:22,lid:7,t:{en:"Finding an Item",ja:"商品を探す"},s:{en:"Hi, welcome! Is there something I can help you find?",ja:"いらっしゃいませ！何かお探しですか？"},c:"supermarket finding products aisle"},
+  {id:23,lid:7,t:{en:"At the Checkout",ja:"レジ会計"},s:{en:"Did you find everything okay? Paper or plastic?",ja:"お探しのものは見つかりましたか？紙袋とビニール袋どちらにしますか？"},c:"supermarket checkout payment bags"},
+  {id:24,lid:7,t:{en:"Returning an Item",ja:"返品"},s:{en:"Hi, how can I help you at customer service today?",ja:"カスタマーサービスへようこそ。どうされましたか？"},c:"supermarket return refund receipt"},
+  // Hospital (8)
+  {id:25,lid:8,t:{en:"Describing Symptoms",ja:"症状の説明"},s:{en:"Hello, I'm Dr. Park. What brings you in today?",ja:"こんにちは、パク先生です。今日はどうされましたか？"},c:"hospital doctor symptoms medical"},
+  {id:26,lid:8,t:{en:"At the Reception",ja:"受付"},s:{en:"Good morning! Do you have an appointment?",ja:"おはようございます！ご予約はありますか？"},c:"hospital reception appointment insurance"},
+  {id:27,lid:8,t:{en:"Pharmacy Pickup",ja:"処方箋の受け取り"},s:{en:"Hi, are you here to pick up a prescription?",ja:"処方箋のお受け取りですか？"},c:"hospital pharmacy prescription medicine"},
+  // Bank (9)
+  {id:28,lid:9,t:{en:"Opening an Account",ja:"口座開設"},s:{en:"Welcome to City Bank! How can I help you today?",ja:"シティバンクへようこそ！本日はどのようなご用件ですか？"},c:"bank account opening documents"},
+  {id:29,lid:9,t:{en:"Currency Exchange",ja:"両替"},s:{en:"Hello! Would you like to make an exchange today?",ja:"こんにちは！両替をご希望ですか？"},c:"bank currency exchange rate"},
+  {id:30,lid:9,t:{en:"Reporting a Lost Card",ja:"カード紛失届"},s:{en:"Thank you for calling. How may I assist you?",ja:"お電話ありがとうございます。ご用件は？"},c:"bank lost card report block"},
+  // Post Office (10)
+  {id:31,lid:10,t:{en:"Sending a Package",ja:"荷物の発送"},s:{en:"Next in line, please! How can I help you?",ja:"次の方どうぞ！何のご用件ですか？"},c:"post office package shipping"},
+  {id:32,lid:10,t:{en:"Buying Stamps",ja:"切手の購入"},s:{en:"Hello! What can I do for you today?",ja:"こんにちは！何かお手伝いできますか？"},c:"post office stamps mail letter"},
+  {id:33,lid:10,t:{en:"Tracking a Package",ja:"荷物の追跡"},s:{en:"Sure, do you have your tracking number?",ja:"追跡番号はお持ちですか？"},c:"post office tracking delivery status"},
+  // Pharmacy (11)
+  {id:34,lid:11,t:{en:"Buying Cold Medicine",ja:"風邪薬の購入"},s:{en:"Hi there! What can I help you find?",ja:"こんにちは！何をお探しですか？"},c:"pharmacy cold medicine symptoms"},
+  {id:35,lid:11,t:{en:"Asking About Side Effects",ja:"副作用の確認"},s:{en:"This is a popular choice. Have you taken this before?",ja:"こちらは人気の商品です。以前使ったことはありますか？"},c:"pharmacy side effects dosage"},
+  {id:36,lid:11,t:{en:"Prescription Refill",ja:"処方箋の再発行"},s:{en:"Are you here for a refill?",ja:"リフィルのご用件ですか？"},c:"pharmacy prescription refill insurance"},
+  // Bus Stop (12)
+  {id:37,lid:12,t:{en:"Asking About Bus Routes",ja:"バス路線の確認"},s:{en:"Hey, are you waiting for the 42 bus too?",ja:"42番バスを待っていますか？"},c:"bus stop route schedule"},
+  {id:38,lid:12,t:{en:"Paying the Fare",ja:"運賃の支払い"},s:{en:"Welcome aboard! Do you have a transit card?",ja:"ご乗車ありがとうございます。交通カードはお持ちですか？"},c:"bus fare payment transit card"},
+  {id:39,lid:12,t:{en:"Missing the Bus",ja:"バスに乗り遅れる"},s:{en:"Oh no, was that the bus you needed?",ja:"あら、あれがあなたの乗るバスでしたか？"},c:"bus missed schedule next bus"},
+  // Train Station (13)
+  {id:40,lid:13,t:{en:"Buying a Ticket",ja:"切符の購入"},s:{en:"Hello! Where would you like to go today?",ja:"こんにちは！どちらまで行かれますか？"},c:"train station ticket purchase"},
+  {id:41,lid:13,t:{en:"Asking About Delays",ja:"遅延の確認"},s:{en:"Attention: The 3:15 express to downtown is delayed by 20 minutes.",ja:"お知らせ：3時15分発の急行は20分遅れています。"},c:"train delay announcement schedule"},
+  {id:42,lid:13,t:{en:"Finding the Platform",ja:"ホームの確認"},s:{en:"Excuse me, can I help you find your platform?",ja:"すみません、ホームをお探しですか？"},c:"train station platform navigation"},
+  // Taxi (14)
+  {id:43,lid:14,t:{en:"Hailing a Taxi",ja:"タクシーを呼ぶ"},s:{en:"Where to?",ja:"どちらまで？"},c:"taxi destination hailing"},
+  {id:44,lid:14,t:{en:"Asking About the Fare",ja:"料金の確認"},s:{en:"It should be about a 20-minute ride. Traffic's not bad today.",ja:"だいたい20分くらいですね。今日は渋滞してないです。"},c:"taxi fare estimate route"},
+  {id:45,lid:14,t:{en:"Giving Directions",ja:"道順の指示"},s:{en:"I'm not sure I know that area. Can you help me with directions?",ja:"その辺はよく知らないんです。道を教えてもらえますか？"},c:"taxi directions navigation turns"},
+  // Shopping Mall (15)
+  {id:46,lid:15,t:{en:"Looking for a Store",ja:"店を探す"},s:{en:"Welcome to Central Mall! Are you looking for something specific?",ja:"セントラルモールへようこそ！何かお探しですか？"},c:"mall store directory map"},
+  {id:47,lid:15,t:{en:"Trying on Clothes",ja:"試着"},s:{en:"That looks great on you! Would you like to try a different size?",ja:"よくお似合いですよ！サイズ違いはいかがですか？"},c:"mall clothing fitting room size"},
+  {id:48,lid:15,t:{en:"Getting a Refund",ja:"返金"},s:{en:"I'm sorry you're not satisfied. Do you have your receipt?",ja:"ご満足いただけず申し訳ありません。レシートはお持ちですか？"},c:"mall refund exchange receipt"},
+  // Bookstore (16)
+  {id:49,lid:16,t:{en:"Asking for Recommendations",ja:"おすすめを聞く"},s:{en:"Hi! Are you looking for anything in particular?",ja:"いらっしゃいませ！何かお探しの本はありますか？"},c:"bookstore recommendation genre"},
+  {id:50,lid:16,t:{en:"Ordering a Book",ja:"本の取り寄せ"},s:{en:"I'm sorry, we don't have that in stock right now.",ja:"申し訳ありませんが、現在在庫がございません。"},c:"bookstore order special request"},
+  // Gym (17)
+  {id:51,lid:17,t:{en:"Signing Up",ja:"入会手続き"},s:{en:"Welcome to FitLife! Are you interested in joining?",ja:"フィットライフへようこそ！入会をお考えですか？"},c:"gym membership signup plan"},
+  {id:52,lid:17,t:{en:"Asking About Classes",ja:"クラスの問い合わせ"},s:{en:"We have a lot of group classes! What are you interested in?",ja:"グループクラスがたくさんありますよ！何に興味がありますか？"},c:"gym classes schedule yoga"},
+  {id:53,lid:17,t:{en:"Equipment Help",ja:"器具の使い方"},s:{en:"Hey, is this your first time using this machine?",ja:"この器具を使うのは初めてですか？"},c:"gym equipment instructions safety"},
+  // Park (18)
+  {id:54,lid:18,t:{en:"Making Friends",ja:"友達を作る"},s:{en:"Hi! Your dog is so cute! What's its name?",ja:"こんにちは！かわいい犬ですね！名前は？"},c:"park dog walking friendship"},
+  {id:55,lid:18,t:{en:"Joining a Pickup Game",ja:"スポーツに参加"},s:{en:"Hey! We need one more player. Want to join us?",ja:"おーい！もう一人足りないんだ。参加しない？"},c:"park sports game joining"},
+  {id:56,lid:18,t:{en:"At the Food Truck",ja:"フードトラック"},s:{en:"Welcome! Today's special is our Korean BBQ tacos!",ja:"いらっしゃい！今日のスペシャルはコリアンBBQタコスだよ！"},c:"park food truck ordering outdoor"},
+  // Museum (19)
+  {id:57,lid:19,t:{en:"Buying Tickets",ja:"チケット購入"},s:{en:"Welcome to the City Art Museum! How many tickets?",ja:"市立美術館へようこそ！チケットは何枚ですか？"},c:"museum tickets admission discount"},
+  {id:58,lid:19,t:{en:"Asking About an Exhibit",ja:"展示について質問"},s:{en:"This painting is one of our most popular pieces. Interested in learning more?",ja:"この絵は一番人気の作品です。もっと知りたいですか？"},c:"museum exhibit art history"},
+  {id:59,lid:19,t:{en:"Gift Shop",ja:"ギフトショップ"},s:{en:"Welcome to our gift shop! Are you looking for a souvenir?",ja:"ギフトショップへようこそ！お土産をお探しですか？"},c:"museum gift shop souvenir"},
+  // Movie Theater (20)
+  {id:60,lid:20,t:{en:"Buying Movie Tickets",ja:"映画チケット購入"},s:{en:"Hi! What movie would you like to see today?",ja:"こんにちは！今日はどの映画をご覧になりますか？"},c:"movie theater tickets showtime"},
+  {id:61,lid:20,t:{en:"At the Concession Stand",ja:"売店"},s:{en:"Would you like to add popcorn and a drink to your order?",ja:"ポップコーンとドリンクもいかがですか？"},c:"movie theater snacks concession"},
+  {id:62,lid:20,t:{en:"Discussing a Movie",ja:"映画の感想"},s:{en:"That movie was amazing, right? What did you think?",ja:"あの映画すごかったよね？どう思った？"},c:"movie review discussion opinion"},
+  // Gas Station (21)
+  {id:63,lid:21,t:{en:"Filling Up",ja:"給油"},s:{en:"Hi! Regular, premium, or diesel?",ja:"いらっしゃいませ！レギュラー、ハイオク、軽油のどれにしますか？"},c:"gas station fuel filling pump"},
+  {id:64,lid:21,t:{en:"Car Trouble",ja:"車のトラブル"},s:{en:"Your engine light is on. Want me to take a look?",ja:"エンジンランプが点いていますよ。見ましょうか？"},c:"gas station car trouble mechanic"},
+  // Laundromat (22)
+  {id:65,lid:22,t:{en:"First Time Using",ja:"初めての利用"},s:{en:"Hey, is this your first time here? These machines can be tricky.",ja:"初めてですか？この機械はちょっとわかりにくいですよね。"},c:"laundromat washing machines coins"},
+  {id:66,lid:22,t:{en:"Machine Problem",ja:"機械のトラブル"},s:{en:"It looks like that machine ate your quarters. Let me help.",ja:"あの機械にお金を取られたみたいですね。手伝いましょう。"},c:"laundromat machine broken refund"},
+  // Hair Salon (23)
+  {id:67,lid:23,t:{en:"Getting a Haircut",ja:"ヘアカット"},s:{en:"Welcome! Do you have an appointment?",ja:"いらっしゃいませ！ご予約はございますか？"},c:"hair salon haircut appointment style"},
+  {id:68,lid:23,t:{en:"Describing Your Style",ja:"スタイルの説明"},s:{en:"What kind of look are you going for today?",ja:"今日はどんなスタイルにされますか？"},c:"hair salon style description cut color"},
+  // Real Estate (24)
+  {id:69,lid:24,t:{en:"Apartment Hunting",ja:"部屋探し"},s:{en:"Welcome! What kind of apartment are you looking for?",ja:"いらっしゃいませ！どのようなお部屋をお探しですか？"},c:"real estate apartment rent budget"},
+  {id:70,lid:24,t:{en:"Signing a Lease",ja:"賃貸契約"},s:{en:"Great news! Your application has been approved. Let's go over the lease.",ja:"朗報です！審査が通りました。契約内容を確認しましょう。"},c:"real estate lease contract deposit"},
+  // Police Station (25)
+  {id:71,lid:25,t:{en:"Reporting Lost Item",ja:"紛失届"},s:{en:"Hello. What can I help you with?",ja:"こんにちは。どうされましたか？"},c:"police station lost item report"},
+  {id:72,lid:25,t:{en:"Asking for Help",ja:"助けを求める"},s:{en:"Are you okay? Do you need assistance?",ja:"大丈夫ですか？何かお手伝いしましょうか？"},c:"police assistance emergency help"},
+  // Library (26)
+  {id:73,lid:26,t:{en:"Getting a Library Card",ja:"図書カードの作成"},s:{en:"Welcome to City Library! Would you like to get a library card?",ja:"市立図書館へようこそ！図書カードをお作りしますか？"},c:"library card registration"},
+  {id:74,lid:26,t:{en:"Finding a Book",ja:"本を探す"},s:{en:"Are you looking for something specific? I can help you search.",ja:"何かお探しですか？検索をお手伝いしますよ。"},c:"library search book catalog"},
+  {id:75,lid:26,t:{en:"Study Room",ja:"自習室"},s:{en:"We have study rooms available. Would you like to reserve one?",ja:"自習室が空いています。予約されますか？"},c:"library study room reservation quiet"},
+  // Bar / Pub (27)
+  {id:76,lid:27,t:{en:"Ordering a Drink",ja:"ドリンク注文"},s:{en:"Hey there! What can I get you?",ja:"いらっしゃい！何にしますか？"},c:"bar pub drink order cocktail beer"},
+  {id:77,lid:27,t:{en:"Making Small Talk",ja:"雑談"},s:{en:"So, do you come here often? I haven't seen you before.",ja:"よくここに来るの？初めて見る顔だね。"},c:"bar small talk socializing"},
+  {id:78,lid:27,t:{en:"Closing Tab",ja:"会計"},s:{en:"Last call! Would you like to close your tab?",ja:"ラストオーダーです！お会計されますか？"},c:"bar tab closing payment"},
+  // Convenience Store (28)
+  {id:79,lid:28,t:{en:"Quick Purchase",ja:"買い物"},s:{en:"Hi! Will this be all for today?",ja:"こんにちは！お会計はこちらだけですか？"},c:"convenience store quick purchase snacks"},
+  {id:80,lid:28,t:{en:"Asking About Products",ja:"商品の質問"},s:{en:"Can I help you find anything?",ja:"何かお探しですか？"},c:"convenience store products location"},
+  {id:81,lid:28,t:{en:"Heating Up Food",ja:"食品の温め"},s:{en:"Would you like me to heat that up for you?",ja:"温めましょうか？"},c:"convenience store microwave food"},
+  // Office (29)
+  {id:82,lid:29,t:{en:"Meeting a Colleague",ja:"同僚との挨拶"},s:{en:"Hi! You must be the new team member. Welcome aboard!",ja:"こんにちは！新しいチームメンバーですよね。よろしく！"},c:"office colleague introduction workplace"},
+  {id:83,lid:29,t:{en:"Asking About a Task",ja:"業務の質問"},s:{en:"Do you have a minute? I need to discuss the project deadline.",ja:"ちょっといいですか？プロジェクトの締切について相談したいのですが。"},c:"office work project deadline discussion"},
+  {id:84,lid:29,t:{en:"Coffee Break Chat",ja:"休憩の雑談"},s:{en:"Hey! Taking a coffee break? How's your day going?",ja:"やあ！コーヒー休憩？今日はどう？"},c:"office break room casual conversation"},
+  {id:85,lid:29,t:{en:"Scheduling a Meeting",ja:"会議のスケジュール"},s:{en:"I need to set up a meeting with the team. When works for you?",ja:"チームミーティングを設定したいのですが。いつが都合いいですか？"},c:"office meeting schedule calendar"},
+  // Beach (30)
+  {id:86,lid:30,t:{en:"Renting Equipment",ja:"レンタル"},s:{en:"Hey! Looking to rent a surfboard or umbrella?",ja:"いらっしゃい！サーフボードかパラソルのレンタルですか？"},c:"beach rental surfboard umbrella"},
+  {id:87,lid:30,t:{en:"Beach Conversation",ja:"ビーチでの会話"},s:{en:"Beautiful day for the beach! Is this your first time here?",ja:"ビーチ日和ですね！ここは初めてですか？"},c:"beach conversation vacation tourist"},
+  {id:88,lid:30,t:{en:"Lifeguard Warning",ja:"ライフガードの注意"},s:{en:"Hey! Be careful, the current is strong today. Stay in the safe zone.",ja:"気をつけて！今日は潮の流れが強いです。安全区域で泳いでください。"},c:"beach safety lifeguard warning"},
+  // Extra scenarios spread across locations
+  {id:89,lid:3,t:{en:"Complaining About Food",ja:"料理のクレーム"},s:{en:"Is everything alright with your meal?",ja:"お食事はいかがですか？"},c:"restaurant complaint food quality"},
+  {id:90,lid:5,t:{en:"Group Project",ja:"グループ作業"},s:{en:"So, we need to finish this presentation by Friday. Any ideas?",ja:"金曜までにプレゼンを仕上げないと。何かアイデアある？"},c:"school group project teamwork"},
+  {id:91,lid:6,t:{en:"Helping a Tourist",ja:"観光客を助ける"},s:{en:"Excuse me, do you know where the nearest subway station is?",ja:"すみません、一番近い地下鉄の駅はどこですか？"},c:"street helping tourist directions subway"},
+  {id:92,lid:8,t:{en:"Emergency Room",ja:"緊急外来"},s:{en:"What happened? Can you tell me where it hurts?",ja:"どうされましたか？どこが痛みますか？"},c:"hospital emergency room injury pain"},
+  {id:93,lid:9,t:{en:"Loan Inquiry",ja:"ローン相談"},s:{en:"Are you interested in a personal loan or a mortgage?",ja:"個人ローンと住宅ローン、どちらをご希望ですか？"},c:"bank loan mortgage interest rate"},
+  {id:94,lid:13,t:{en:"Lost and Found",ja:"落とし物"},s:{en:"Lost and found office. What did you lose?",ja:"忘れ物センターです。何を紛失されましたか？"},c:"train station lost found belongings"},
+  {id:95,lid:15,t:{en:"Electronics Shopping",ja:"電子機器の買い物"},s:{en:"Looking for a new phone? We have some great deals today!",ja:"新しいスマホをお探しですか？今日はお得なセールがありますよ！"},c:"mall electronics phone shopping deals"},
+  {id:96,lid:18,t:{en:"Asking About Events",ja:"イベントの問い合わせ"},s:{en:"There's a free concert in the park this weekend. Are you going?",ja:"今週末、公園で無料コンサートがあるよ。行く？"},c:"park events concert weekend plans"},
+  {id:97,lid:24,t:{en:"Maintenance Request",ja:"修繕依頼"},s:{en:"Hello, this is property management. What seems to be the problem?",ja:"管理会社です。どのような問題がございますか？"},c:"apartment maintenance repair plumbing"},
+  {id:98,lid:27,t:{en:"Trivia Night",ja:"トリビアナイト"},s:{en:"Welcome to trivia night! Do you want to join a team?",ja:"トリビアナイトへようこそ！チームに参加しますか？"},c:"bar trivia game team social"},
+  {id:99,lid:29,t:{en:"Presentation Feedback",ja:"プレゼンのフィードバック"},s:{en:"Great presentation! I had a few questions about slide 5.",ja:"いいプレゼンでしたね！スライド5についていくつか質問があります。"},c:"office presentation feedback questions"},
+  {id:100,lid:30,t:{en:"Sunset Photo",ja:"夕日の写真"},s:{en:"Wow, what a gorgeous sunset! Could you take a photo of us?",ja:"わあ、きれいな夕日！私たちの写真を撮っていただけますか？"},c:"beach sunset photo request stranger"},
+];
+
+// ═══════════════════════════════════════════════════════
+// 🤖 OPENAI API INTEGRATION
+// ═══════════════════════════════════════════════════════
+async function callOpenAI(messages, apiKey, lang, scenarioContext) {
+  const langLabel = lang === "en" ? "English" : "Japanese";
+  const sysMsg = {
+    role: "system",
+    content: `You are a friendly native ${langLabel} speaker helping someone practice ${langLabel} conversation.
+Stay in character for the scenario (context: ${scenarioContext}).
+Respond naturally in ${langLabel} ONLY (2-3 sentences max).
+
+After your in-character response, add exactly these sections on new lines:
+📝 (brief feedback on the user's ${langLabel} in Korean - grammar, naturalness, pronunciation tips)
+💡 (3 alternative native expressions the user could have said, numbered 1-3, in ${langLabel} with Korean translation)
+📖 (2-3 useful vocabulary words from this exchange: word | meaning in Korean | pronunciation guide)`
+  };
+  const res = await fetch("https://api.openai.com/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "Authorization": `Bearer ${apiKey}`
+    },
+    body: JSON.stringify({
+      model: "gpt-4o-mini",
+      messages: [sysMsg, ...messages],
+      temperature: 0.8,
+      max_tokens: 600
+    })
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error?.message || `API Error: ${res.status}`);
+  }
+  const data = await res.json();
+  return data.choices[0].message.content;
+}
+
+function parseAIResponse(text) {
+  const lines = text.split('\n');
+  let conversation = '', feedback = '', suggestions = '', vocabulary = '';
+  let current = 'conversation';
+  for (const line of lines) {
+    if (line.startsWith('📝')) { current = 'feedback'; feedback += line.replace('📝', '').trim() + '\n'; }
+    else if (line.startsWith('💡')) { current = 'suggestions'; suggestions += line.replace('💡', '').trim() + '\n'; }
+    else if (line.startsWith('📖')) { current = 'vocabulary'; vocabulary += line.replace('📖', '').trim() + '\n'; }
+    else if (current === 'feedback') feedback += line + '\n';
+    else if (current === 'suggestions') suggestions += line + '\n';
+    else if (current === 'vocabulary') vocabulary += line + '\n';
+    else conversation += line + '\n';
+  }
+  return {
+    conversation: conversation.trim(),
+    feedback: feedback.trim(),
+    suggestions: suggestions.trim(),
+    vocabulary: vocabulary.trim()
+  };
+}
+
+// ═══════════════════════════════════════════════════════
+// 🗣️ SPEECH UTILITIES
+// ═══════════════════════════════════════════════════════
+function speak(text, lang) {
+  window.speechSynthesis.cancel();
+  const u = new SpeechSynthesisUtterance(text);
+  u.lang = lang === "en" ? "en-US" : "ja-JP";
+  u.rate = 0.85;
+  window.speechSynthesis.speak(u);
+}
+
+function useSpeechRecognition(lang) {
+  const [transcript, setTranscript] = useState('');
+  const [listening, setListening] = useState(false);
+  const recRef = useRef(null);
+
+  const startListening = useCallback(() => {
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SR) { alert("음성 인식이 지원되지 않는 브라우저입니다."); return; }
+    const rec = new SR();
+    rec.lang = lang === "en" ? "en-US" : "ja-JP";
+    rec.interimResults = false;
+    rec.maxAlternatives = 1;
+    rec.onresult = (e) => setTranscript(e.results[0][0].transcript);
+    rec.onend = () => setListening(false);
+    rec.onerror = () => setListening(false);
+    recRef.current = rec;
+    setListening(true);
+    rec.start();
+  }, [lang]);
+
+  const stopListening = useCallback(() => {
+    if (recRef.current) recRef.current.stop();
+    setListening(false);
+  }, []);
+
+  return { transcript, setTranscript, listening, startListening, stopListening };
+}
+
+// ═══════════════════════════════════════════════════════
+// 🎨 STYLES
+// ═══════════════════════════════════════════════════════
+const S = {
+  app: { minHeight:'100vh', background:'#0f172a', color:'#e2e8f0' },
+  header: { background:'#1e293b', padding:'12px 16px', display:'flex', alignItems:'center', justifyContent:'space-between', borderBottom:'1px solid #334155', position:'sticky', top:0, zIndex:50 },
+  headerTitle: { fontSize:'18px', fontWeight:'700', color:'#f1f5f9' },
+  backBtn: { background:'none', border:'none', color:'#94a3b8', fontSize:'20px', padding:'4px 8px' },
+  settingsBtn: { background:'none', border:'none', color:'#94a3b8', fontSize:'18px', padding:'4px 8px' },
+  // Home
+  homeWrap: { padding:'24px 16px', maxWidth:'480px', margin:'0 auto' },
+  logo: { textAlign:'center', marginBottom:'24px' },
+  logoIcon: { fontSize:'48px', marginBottom:'8px' },
+  logoTitle: { fontSize:'28px', fontWeight:'800', background:'linear-gradient(135deg,#60a5fa,#a78bfa)', WebkitBackgroundClip:'text', WebkitTextFillColor:'transparent' },
+  logoSub: { color:'#94a3b8', fontSize:'13px', marginTop:'4px' },
+  langToggle: { display:'flex', gap:'8px', justifyContent:'center', marginBottom:'24px' },
+  langBtn: (active) => ({ padding:'8px 20px', borderRadius:'20px', border: active?'2px solid #60a5fa':'2px solid #334155', background: active?'#1e3a5f':'transparent', color: active?'#60a5fa':'#94a3b8', fontSize:'14px', fontWeight:'600', transition:'all .2s' }),
+  statCards: { display:'grid', gridTemplateColumns:'1fr 1fr', gap:'12px', marginBottom:'24px' },
+  statCard: { background:'#1e293b', borderRadius:'12px', padding:'16px', textAlign:'center' },
+  statNum: { fontSize:'24px', fontWeight:'700', color:'#60a5fa' },
+  statLabel: { fontSize:'11px', color:'#94a3b8', marginTop:'4px' },
+  startBtn: { width:'100%', padding:'14px', borderRadius:'12px', border:'none', background:'linear-gradient(135deg,#3b82f6,#8b5cf6)', color:'#fff', fontSize:'16px', fontWeight:'700', marginBottom:'12px' },
+  apiStatus: (ok) => ({ textAlign:'center', fontSize:'12px', color: ok?'#4ade80':'#f97316', marginBottom:'16px' }),
+  // Locations
+  locGrid: { padding:'16px', maxWidth:'480px', margin:'0 auto', display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gap:'10px' },
+  locCard: { background:'#1e293b', borderRadius:'12px', padding:'16px 8px', textAlign:'center', border:'1px solid #334155', transition:'all .2s' },
+  locIcon: { fontSize:'28px', marginBottom:'6px' },
+  locName: { fontSize:'12px', fontWeight:'600', color:'#e2e8f0' },
+  locCount: { fontSize:'10px', color:'#94a3b8', marginTop:'2px' },
+  // Scenarios
+  scenList: { padding:'16px', maxWidth:'480px', margin:'0 auto' },
+  scenCard: { background:'#1e293b', borderRadius:'12px', padding:'14px 16px', marginBottom:'10px', border:'1px solid #334155', display:'flex', justifyContent:'space-between', alignItems:'center' },
+  scenTitle: { fontSize:'14px', fontWeight:'600', color:'#e2e8f0' },
+  scenArrow: { color:'#64748b', fontSize:'18px' },
+  // Conversation
+  chatWrap: { display:'flex', flexDirection:'column', height:'calc(100vh - 56px)' },
+  chatMessages: { flex:1, overflowY:'auto', padding:'16px', maxWidth:'480px', margin:'0 auto', width:'100%' },
+  msgBubble: (isUser) => ({ maxWidth:'85%', marginLeft: isUser?'auto':0, marginRight: isUser?0:'auto', marginBottom:'12px', animation:'fadeIn .3s ease' }),
+  msgLabel: (isUser) => ({ fontSize:'10px', color:'#64748b', marginBottom:'3px', textAlign: isUser?'right':'left' }),
+  msgText: (isUser) => ({ background: isUser?'#1d4ed8':'#1e293b', color:'#e2e8f0', padding:'10px 14px', borderRadius: isUser?'16px 16px 4px 16px':'16px 16px 16px 4px', fontSize:'14px', lineHeight:'1.5', border: isUser?'none':'1px solid #334155' }),
+  feedbackBox: { background:'#172033', border:'1px solid #334155', borderRadius:'12px', padding:'10px 14px', marginTop:'6px', fontSize:'12px', lineHeight:'1.6', color:'#94a3b8' },
+  fbSection: { marginBottom:'6px' },
+  fbTitle: { fontWeight:'700', color:'#60a5fa', marginBottom:'2px' },
+  typingDots: { display:'flex', gap:'4px', padding:'10px 14px', background:'#1e293b', borderRadius:'16px', width:'fit-content', border:'1px solid #334155' },
+  dot: (i) => ({ width:'8px', height:'8px', borderRadius:'50%', background:'#64748b', animation:`typing 1.4s infinite ${i*0.2}s` }),
+  // Input
+  inputWrap: { borderTop:'1px solid #334155', background:'#1e293b', padding:'10px 16px', display:'flex', gap:'8px', alignItems:'center', maxWidth:'480px', margin:'0 auto', width:'100%' },
+  textInput: { flex:1, background:'#0f172a', border:'1px solid #334155', borderRadius:'20px', padding:'10px 14px', color:'#e2e8f0', fontSize:'14px', outline:'none' },
+  iconBtn: (active, color) => ({ width:'40px', height:'40px', borderRadius:'50%', border:'none', background: active? (color||'#ef4444') :'#334155', color:'#fff', fontSize:'16px', display:'flex', alignItems:'center', justifyContent:'center', transition:'all .2s' }),
+  endBtn: { padding:'8px 16px', borderRadius:'20px', border:'1px solid #f97316', background:'transparent', color:'#f97316', fontSize:'12px', fontWeight:'600' },
+  // Review
+  reviewWrap: { padding:'16px', maxWidth:'480px', margin:'0 auto' },
+  tabBar: { display:'flex', gap:'0', marginBottom:'16px', background:'#1e293b', borderRadius:'12px', overflow:'hidden' },
+  tab: (active) => ({ flex:1, padding:'10px', textAlign:'center', fontSize:'12px', fontWeight:'600', background: active?'#334155':'transparent', color: active?'#60a5fa':'#64748b', border:'none', transition:'all .2s' }),
+  reviewCard: { background:'#1e293b', borderRadius:'12px', padding:'14px', marginBottom:'10px', border:'1px solid #334155' },
+  reviewMsg: (isUser) => ({ padding:'8px 12px', borderRadius:'8px', marginBottom:'6px', fontSize:'13px', background: isUser?'#1d4ed8':'#0f172a', color:'#e2e8f0' }),
+  speakBtn: { background:'none', border:'none', color:'#60a5fa', fontSize:'14px', marginLeft:'6px', verticalAlign:'middle' },
+  vocabItem: { display:'flex', justifyContent:'space-between', padding:'10px', background:'#0f172a', borderRadius:'8px', marginBottom:'6px' },
+  vocabWord: { fontWeight:'600', color:'#e2e8f0', fontSize:'14px' },
+  vocabMeaning: { color:'#94a3b8', fontSize:'12px' },
+  // Modal
+  overlay: { position:'fixed', top:0, left:0, right:0, bottom:0, background:'rgba(0,0,0,.6)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:100, padding:'16px' },
+  modal: { background:'#1e293b', borderRadius:'16px', padding:'24px', width:'100%', maxWidth:'400px', border:'1px solid #334155' },
+  modalTitle: { fontSize:'18px', fontWeight:'700', color:'#f1f5f9', marginBottom:'16px' },
+  modalInput: { width:'100%', background:'#0f172a', border:'1px solid #334155', borderRadius:'8px', padding:'10px 12px', color:'#e2e8f0', fontSize:'14px', marginBottom:'8px', outline:'none' },
+  modalHint: { fontSize:'11px', color:'#64748b', marginBottom:'16px', lineHeight:'1.4' },
+  modalBtnRow: { display:'flex', gap:'8px', justifyContent:'flex-end' },
+  modalBtn: (primary) => ({ padding:'8px 20px', borderRadius:'8px', border:'none', background: primary?'#3b82f6':'#334155', color:'#fff', fontSize:'14px', fontWeight:'600' }),
+};
+
+// ═══════════════════════════════════════════════════════
+// 🏗️ MAIN APP COMPONENT
+// ═══════════════════════════════════════════════════════
+function App() {
+  const [screen, setScreen] = useState('home');
+  const [lang, setLang] = useState('en');
+  const [selectedLoc, setSelectedLoc] = useState(null);
+  const [selectedScen, setSelectedScen] = useState(null);
+  const [apiKey, setApiKey] = useState('');
+  const [showSettings, setShowSettings] = useState(false);
+  const [tempKey, setTempKey] = useState('');
+
+  // Conversation state
+  const [messages, setMessages] = useState([]);
+  const [aiLoading, setAiLoading] = useState(false);
+  const [conversationHistory, setConversationHistory] = useState([]);
+  const [allFeedback, setAllFeedback] = useState([]);
+  const [allVocabulary, setAllVocabulary] = useState([]);
+  const chatEndRef = useRef(null);
+
+  // Speech
+  const { transcript, setTranscript, listening, startListening, stopListening } = useSpeechRecognition(lang);
+  const [textInput, setTextInput] = useState('');
+
+  // Auto-scroll
+  useEffect(() => {
+    chatEndRef.current?.scrollIntoView({ behavior:'smooth' });
+  }, [messages, aiLoading]);
+
+  // Transcript → input
+  useEffect(() => {
+    if (transcript) setTextInput(transcript);
+  }, [transcript]);
+
+  // Start conversation
+  function startConversation(scenario) {
+    setSelectedScen(scenario);
+    const firstMsg = { role:'assistant', content: scenario.s[lang], parsed: { conversation: scenario.s[lang], feedback:'', suggestions:'', vocabulary:'' } };
+    setMessages([firstMsg]);
+    setConversationHistory([{ role:'assistant', content: scenario.s[lang] }]);
+    setAllFeedback([]);
+    setAllVocabulary([]);
+    setScreen('conversation');
+  }
+
+  // Send message
+  async function sendMessage() {
+    const text = textInput.trim();
+    if (!text || aiLoading) return;
+    if (!apiKey) { setShowSettings(true); return; }
+    setTextInput('');
+    setTranscript('');
+
+    const userMsg = { role:'user', content: text, parsed: null };
+    setMessages(prev => [...prev, userMsg]);
+
+    const newHistory = [...conversationHistory, { role:'user', content: text }];
+    setConversationHistory(newHistory);
+    setAiLoading(true);
+
+    try {
+      const aiText = await callOpenAI(newHistory, apiKey, lang, selectedScen.c);
+      const parsed = parseAIResponse(aiText);
+      const aiMsg = { role:'assistant', content: parsed.conversation, parsed };
+      setMessages(prev => [...prev, aiMsg]);
+      setConversationHistory(prev => [...prev, { role:'assistant', content: parsed.conversation }]);
+      if (parsed.feedback) setAllFeedback(prev => [...prev, { userText: text, feedback: parsed.feedback, suggestions: parsed.suggestions }]);
+      if (parsed.vocabulary) setAllVocabulary(prev => [...prev, parsed.vocabulary]);
+    } catch (err) {
+      const errMsg = { role:'assistant', content: `⚠️ Error: ${err.message}`, parsed: { conversation:`⚠️ ${err.message}`, feedback:'', suggestions:'', vocabulary:'' } };
+      setMessages(prev => [...prev, errMsg]);
+    }
+    setAiLoading(false);
+  }
+
+  // Navigate
+  function goHome() { setScreen('home'); window.speechSynthesis.cancel(); }
+  function goLocations() { setScreen('locations'); }
+  function goScenarios(loc) { setSelectedLoc(loc); setScreen('scenarios'); }
+  function goReview() { setScreen('review'); window.speechSynthesis.cancel(); }
+
+  // Settings Modal
+  function saveApiKey() {
+    setApiKey(tempKey.trim());
+    setShowSettings(false);
+  }
+
+  // ── RENDER ──
+  return (
+    <div style={S.app}>
+      {/* HEADER */}
+      {screen !== 'home' && (
+        <div style={S.header}>
+          <button style={S.backBtn} onClick={() => {
+            if (screen === 'conversation') goReview();
+            else if (screen === 'review') goHome();
+            else if (screen === 'scenarios') goLocations();
+            else goHome();
+          }}>
+            {screen === 'conversation' ? '⏹' : '←'}
+          </button>
+          <span style={S.headerTitle}>
+            {screen === 'locations' && (lang==='en'?'Choose Location':'場所を選択')}
+            {screen === 'scenarios' && selectedLoc && `${selectedLoc.icon} ${selectedLoc.name[lang]}`}
+            {screen === 'conversation' && selectedScen && selectedScen.t[lang]}
+            {screen === 'review' && (lang==='en'?'Review':'復習')}
+          </span>
+          <button style={S.settingsBtn} onClick={() => { setTempKey(apiKey); setShowSettings(true); }}>⚙️</button>
+        </div>
+      )}
+
+      {/* HOME SCREEN */}
+      {screen === 'home' && (
+        <div style={S.homeWrap}>
+          <div style={S.logo}>
+            <div style={S.logoIcon}>🗣️</div>
+            <div style={S.logoTitle}>ConvoMaster</div>
+            <div style={S.logoSub}>AI 실전 회화 연습 · 무제한 대화</div>
+          </div>
+          <div style={S.langToggle}>
+            <button style={S.langBtn(lang==='en')} onClick={()=>setLang('en')}>🇺🇸 English</button>
+            <button style={S.langBtn(lang==='ja')} onClick={()=>setLang('ja')}>🇯🇵 日本語</button>
+          </div>
+          <div style={S.statCards}>
+            <div style={S.statCard}><div style={S.statNum}>30</div><div style={S.statLabel}>{lang==='en'?'Locations':'場所'}</div></div>
+            <div style={S.statCard}><div style={S.statNum}>100</div><div style={S.statLabel}>{lang==='en'?'Scenarios':'シナリオ'}</div></div>
+          </div>
+          <div style={S.apiStatus(!!apiKey)}>
+            {apiKey ? '✅ API Key 설정 완료' : '⚠️ API Key를 설정해주세요'}
+          </div>
+          <button style={S.startBtn} onClick={goLocations}>
+            {lang==='en'?'Start Practice':'練習を始める'} →
+          </button>
+          <button style={{...S.startBtn, background:'#334155', marginTop:'0'}} onClick={() => { setTempKey(apiKey); setShowSettings(true); }}>
+            ⚙️ API Key 설정
+          </button>
+        </div>
+      )}
+
+      {/* LOCATIONS */}
+      {screen === 'locations' && (
+        <div style={S.locGrid}>
+          {LOCATIONS.map(loc => {
+            const count = SCENARIOS.filter(s=>s.lid===loc.id).length;
+            return (
+              <button key={loc.id} style={S.locCard} onClick={()=>goScenarios(loc)}>
+                <div style={S.locIcon}>{loc.icon}</div>
+                <div style={S.locName}>{loc.name[lang]}</div>
+                <div style={S.locCount}>{count} {lang==='en'?'scenarios':'シナリオ'}</div>
+              </button>
+            );
+          })}
+        </div>
+      )}
+
+      {/* SCENARIOS */}
+      {screen === 'scenarios' && selectedLoc && (
+        <div style={S.scenList}>
+          {SCENARIOS.filter(s=>s.lid===selectedLoc.id).map(sc => (
+            <button key={sc.id} style={S.scenCard} onClick={()=>startConversation(sc)}>
+              <span style={S.scenTitle}>{sc.t[lang]}</span>
+              <span style={S.scenArrow}>→</span>
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* CONVERSATION */}
+      {screen === 'conversation' && (
+        <div style={S.chatWrap}>
+          <div style={S.chatMessages}>
+            {messages.map((msg, i) => (
+              <div key={i} style={S.msgBubble(msg.role==='user')}>
+                <div style={S.msgLabel(msg.role==='user')}>
+                  {msg.role==='user' ? '🧑 You' : '🤖 Partner'}
+                </div>
+                <div style={S.msgText(msg.role==='user')}>
+                  {msg.parsed ? msg.parsed.conversation : msg.content}
+                  {msg.role==='assistant' && (
+                    <button style={S.speakBtn} onClick={()=>speak(msg.parsed?.conversation||msg.content, lang)}>🔊</button>
+                  )}
+                </div>
+                {msg.parsed?.feedback && (
+                  <div style={S.feedbackBox}>
+                    <div style={S.fbSection}><div style={S.fbTitle}>📝 피드백</div>{msg.parsed.feedback}</div>
+                    {msg.parsed.suggestions && <div style={S.fbSection}><div style={S.fbTitle}>💡 추천표현</div>{msg.parsed.suggestions}</div>}
+                    {msg.parsed.vocabulary && <div style={S.fbSection}><div style={S.fbTitle}>📖 어휘</div>{msg.parsed.vocabulary}</div>}
+                  </div>
+                )}
+              </div>
+            ))}
+            {aiLoading && (
+              <div style={S.msgBubble(false)}>
+                <div style={S.msgLabel(false)}>🤖 Partner</div>
+                <div style={S.typingDots}>
+                  <span style={S.dot(0)}></span>
+                  <span style={S.dot(1)}></span>
+                  <span style={S.dot(2)}></span>
+                </div>
+              </div>
+            )}
+            <div ref={chatEndRef}></div>
+          </div>
+          <div style={S.inputWrap}>
+            <button style={S.iconBtn(listening,'#ef4444')} onClick={listening?stopListening:startListening}>
+              {listening?'⏹':'🎤'}
+            </button>
+            <input
+              style={S.textInput}
+              value={textInput}
+              onChange={e=>setTextInput(e.target.value)}
+              onKeyDown={e=>e.key==='Enter'&&sendMessage()}
+              placeholder={lang==='en'?'Type or speak...':'入力または音声...'}
+            />
+            <button style={S.iconBtn(false,'#3b82f6')} onClick={sendMessage}>➤</button>
+            <button style={S.endBtn} onClick={goReview}>
+              {lang==='en'?'End':'終了'}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* REVIEW */}
+      {screen === 'review' && <ReviewScreen messages={messages} allFeedback={allFeedback} allVocabulary={allVocabulary} lang={lang} scenario={selectedScen} />}
+
+      {/* SETTINGS MODAL */}
+      {showSettings && (
+        <div style={S.overlay} onClick={()=>setShowSettings(false)}>
+          <div style={S.modal} onClick={e=>e.stopPropagation()}>
+            <div style={S.modalTitle}>⚙️ OpenAI API Key 설정</div>
+            <input
+              style={S.modalInput}
+              type="password"
+              value={tempKey}
+              onChange={e=>setTempKey(e.target.value)}
+              placeholder="sk-..."
+            />
+            <div style={S.modalHint}>
+              💡 API Key는 브라우저에만 저장되며 서버로 전송되지 않습니다.<br/>
+              OpenAI에서 API Key를 발급받으세요: platform.openai.com
+            </div>
+            <div style={S.modalBtnRow}>
+              <button style={S.modalBtn(false)} onClick={()=>setShowSettings(false)}>취소</button>
+              <button style={S.modalBtn(true)} onClick={saveApiKey}>저장</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════
+// 📋 REVIEW SCREEN COMPONENT
+// ═══════════════════════════════════════════════════════
+function ReviewScreen({ messages, allFeedback, allVocabulary, lang, scenario }) {
+  const [tab, setTab] = useState('script');
+  const tabs = [
+    { id:'script', label: lang==='en'?'Script':'スクリプト' },
+    { id:'feedback', label: lang==='en'?'Feedback':'フィードバック' },
+    { id:'vocabulary', label: lang==='en'?'Vocabulary':'語彙' },
+    { id:'expressions', label: lang==='en'?'Expressions':'表現' },
+  ];
+
+  return (
+    <div style={S.reviewWrap}>
+      {/* Scenario title */}
+      {scenario && (
+        <div style={{textAlign:'center', marginBottom:'16px'}}>
+          <div style={{fontSize:'13px', color:'#64748b'}}>{LOCATIONS.find(l=>l.id===scenario.lid)?.icon} {LOCATIONS.find(l=>l.id===scenario.lid)?.name[lang]}</div>
+          <div style={{fontSize:'18px', fontWeight:'700', color:'#f1f5f9', marginTop:'4px'}}>{scenario.t[lang]}</div>
+        </div>
+      )}
+      {/* Tabs */}
+      <div style={S.tabBar}>
+        {tabs.map(t => (
+          <button key={t.id} style={S.tab(tab===t.id)} onClick={()=>setTab(t.id)}>{t.label}</button>
+        ))}
+      </div>
+      {/* Script tab */}
+      {tab === 'script' && (
+        <div>
+          {messages.length === 0 && <div style={{textAlign:'center',color:'#64748b',padding:'32px'}}>대화 기록이 없습니다</div>}
+          {messages.map((msg, i) => (
+            <div key={i} style={S.reviewCard}>
+              <div style={{fontSize:'10px',color:'#64748b',marginBottom:'4px'}}>{msg.role==='user'?'🧑 You':'🤖 Partner'}</div>
+              <div style={S.reviewMsg(msg.role==='user')}>
+                {msg.parsed ? msg.parsed.conversation : msg.content}
+                <button style={S.speakBtn} onClick={()=>speak(msg.parsed?.conversation||msg.content, lang)}>🔊</button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+      {/* Feedback tab */}
+      {tab === 'feedback' && (
+        <div>
+          {allFeedback.length === 0 && <div style={{textAlign:'center',color:'#64748b',padding:'32px'}}>피드백 내역이 없습니다</div>}
+          {allFeedback.map((fb, i) => (
+            <div key={i} style={S.reviewCard}>
+              <div style={{fontSize:'12px',color:'#60a5fa',fontWeight:'600',marginBottom:'6px'}}>"{fb.userText}"</div>
+              <div style={{fontSize:'12px',color:'#94a3b8',lineHeight:'1.6'}}>{fb.feedback}</div>
+            </div>
+          ))}
+        </div>
+      )}
+      {/* Vocabulary tab */}
+      {tab === 'vocabulary' && (
+        <div>
+          {allVocabulary.length === 0 && <div style={{textAlign:'center',color:'#64748b',padding:'32px'}}>어휘 내역이 없습니다</div>}
+          {allVocabulary.map((v, i) => (
+            <div key={i} style={S.reviewCard}>
+              <div style={{fontSize:'12px',color:'#e2e8f0',lineHeight:'1.6',whiteSpace:'pre-wrap'}}>{v}</div>
+            </div>
+          ))}
+        </div>
+      )}
+      {/* Expressions tab */}
+      {tab === 'expressions' && (
+        <div>
+          {allFeedback.filter(f=>f.suggestions).length === 0 && <div style={{textAlign:'center',color:'#64748b',padding:'32px'}}>추천 표현이 없습니다</div>}
+          {allFeedback.filter(f=>f.suggestions).map((fb, i) => (
+            <div key={i} style={S.reviewCard}>
+              <div style={{fontSize:'11px',color:'#64748b',marginBottom:'4px'}}>"{fb.userText}" 대신:</div>
+              <div style={{fontSize:'12px',color:'#e2e8f0',lineHeight:'1.8',whiteSpace:'pre-wrap'}}>{fb.suggestions}</div>
+            </div>
+          ))}
+        </div>
+      )}
+      {/* Back to home */}
+      <button style={{...S.startBtn, marginTop:'16px'}} onClick={()=>window.location.reload()}>
+        🏠 {lang==='en'?'Back to Home':'ホームに戻る'}
+      </button>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════
+// 🚀 MOUNT
+// ═══════════════════════════════════════════════════════
+const root = ReactDOM.createRoot(document.getElementById('root'));
+root.render(<App />);
+</script>
+</body>
+</html>
