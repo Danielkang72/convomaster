@@ -264,14 +264,58 @@ function parseAIResponse(text) {
 }
 
 // ═══════════════════════════════════════════════════════
-// 🗣️ SPEECH UTILITIES
+// 🗣️ SPEECH UTILITIES (OpenAI TTS + fallback)
 // ═══════════════════════════════════════════════════════
-function speak(text, lang) {
+let currentAudio = null;
+
+async function speak(text, lang, apiKey) {
+  // 현재 재생 중이면 중지
+  if (currentAudio) {
+    currentAudio.pause();
+    currentAudio = null;
+  }
   window.speechSynthesis.cancel();
+
+  // OpenAI TTS 시도 (API Key가 있을 때)
+  if (apiKey) {
+    try {
+      const res = await fetch("https://api.openai.com/v1/audio/speech", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${apiKey}`
+        },
+        body: JSON.stringify({
+          model: "tts-1",
+          input: text,
+          voice: lang === "en" ? "nova" : "nova",
+          speed: 0.9
+        })
+      });
+      if (res.ok) {
+        const blob = await res.blob();
+        const url = URL.createObjectURL(blob);
+        const audio = new Audio(url);
+        currentAudio = audio;
+        audio.onended = () => { URL.revokeObjectURL(url); currentAudio = null; };
+        audio.play();
+        return;
+      }
+    } catch (e) {
+      console.log("OpenAI TTS failed, falling back to browser TTS:", e);
+    }
+  }
+
+  // Fallback: 브라우저 내장 TTS
   const u = new SpeechSynthesisUtterance(text);
   u.lang = lang === "en" ? "en-US" : "ja-JP";
   u.rate = 0.85;
   window.speechSynthesis.speak(u);
+}
+
+function stopSpeaking() {
+  if (currentAudio) { currentAudio.pause(); currentAudio = null; }
+  window.speechSynthesis.cancel();
 }
 
 function useSpeechRecognition(lang) {
@@ -415,6 +459,8 @@ function App() {
     setAllFeedback([]);
     setAllVocabulary([]);
     setScreen('conversation');
+    // 🔊 시나리오 첫 인사말 자동 재생
+    speak(scenario.s[lang], lang, apiKey);
   }
 
   // Send message
@@ -440,6 +486,8 @@ function App() {
       setConversationHistory(prev => [...prev, { role:'assistant', content: parsed.conversation }]);
       if (parsed.feedback) setAllFeedback(prev => [...prev, { userText: text, feedback: parsed.feedback, suggestions: parsed.suggestions }]);
       if (parsed.vocabulary) setAllVocabulary(prev => [...prev, parsed.vocabulary]);
+      // 🔊 AI 응답 자동 재생
+      speak(parsed.conversation, lang, apiKey);
     } catch (err) {
       const errMsg = { role:'assistant', content: `⚠️ Error: ${err.message}`, parsed: { conversation:`⚠️ ${err.message}`, feedback:'', suggestions:'', vocabulary:'' } };
       setMessages(prev => [...prev, errMsg]);
@@ -448,10 +496,10 @@ function App() {
   }
 
   // Navigate
-  function goHome() { setScreen('home'); window.speechSynthesis.cancel(); }
+  function goHome() { setScreen('home'); stopSpeaking(); }
   function goLocations() { setScreen('locations'); }
   function goScenarios(loc) { setSelectedLoc(loc); setScreen('scenarios'); }
-  function goReview() { setScreen('review'); window.speechSynthesis.cancel(); }
+  function goReview() { setScreen('review'); stopSpeaking(); }
 
   // Settings Modal
   function saveApiKey() {
@@ -551,7 +599,7 @@ function App() {
                 <div style={S.msgText(msg.role==='user')}>
                   {msg.parsed ? msg.parsed.conversation : msg.content}
                   {msg.role==='assistant' && (
-                    <button style={S.speakBtn} onClick={()=>speak(msg.parsed?.conversation||msg.content, lang)}>🔊</button>
+                    <button style={S.speakBtn} onClick={()=>speak(msg.parsed?.conversation||msg.content, lang, apiKey)}>🔊</button>
                   )}
                 </div>
                 {msg.parsed?.feedback && (
@@ -595,7 +643,7 @@ function App() {
       )}
 
       {/* REVIEW */}
-      {screen === 'review' && <ReviewScreen messages={messages} allFeedback={allFeedback} allVocabulary={allVocabulary} lang={lang} scenario={selectedScen} />}
+      {screen === 'review' && <ReviewScreen messages={messages} allFeedback={allFeedback} allVocabulary={allVocabulary} lang={lang} scenario={selectedScen} apiKey={apiKey} />}
 
       {/* SETTINGS MODAL */}
       {showSettings && (
@@ -611,6 +659,7 @@ function App() {
             />
             <div style={S.modalHint}>
               💡 API Key는 브라우저에만 저장되며 서버로 전송되지 않습니다.<br/>
+              🔊 원어민급 TTS 음성이 자동으로 활성화됩니다.<br/>
               OpenAI에서 API Key를 발급받으세요: platform.openai.com
             </div>
             <div style={S.modalBtnRow}>
@@ -627,7 +676,7 @@ function App() {
 // ═══════════════════════════════════════════════════════
 // 📋 REVIEW SCREEN COMPONENT
 // ═══════════════════════════════════════════════════════
-function ReviewScreen({ messages, allFeedback, allVocabulary, lang, scenario }) {
+function ReviewScreen({ messages, allFeedback, allVocabulary, lang, scenario, apiKey }) {
   const [tab, setTab] = useState('script');
   const tabs = [
     { id:'script', label: lang==='en'?'Script':'スクリプト' },
@@ -660,7 +709,7 @@ function ReviewScreen({ messages, allFeedback, allVocabulary, lang, scenario }) 
               <div style={{fontSize:'10px',color:'#64748b',marginBottom:'4px'}}>{msg.role==='user'?'🧑 You':'🤖 Partner'}</div>
               <div style={S.reviewMsg(msg.role==='user')}>
                 {msg.parsed ? msg.parsed.conversation : msg.content}
-                <button style={S.speakBtn} onClick={()=>speak(msg.parsed?.conversation||msg.content, lang)}>🔊</button>
+                <button style={S.speakBtn} onClick={()=>speak(msg.parsed?.conversation||msg.content, lang, apiKey)}>🔊</button>
               </div>
             </div>
           ))}
