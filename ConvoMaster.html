@@ -1155,30 +1155,51 @@ function stopSpeaking() {
 
 function useSpeechRecognition(lang) {
   const [transcript, setTranscript] = useState('');
+  const [interimText, setInterimText] = useState('');
   const [listening, setListening] = useState(false);
   const recRef = useRef(null);
+  const fullTextRef = useRef('');
 
   const startListening = useCallback(() => {
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SR) { alert("음성 인식이 지원되지 않는 브라우저입니다."); return; }
     const rec = new SR();
     rec.lang = lang === "en" ? "en-US" : "ja-JP";
-    rec.interimResults = false;
+    rec.interimResults = true;
+    rec.continuous = true;
     rec.maxAlternatives = 1;
-    rec.onresult = (e) => setTranscript(e.results[0][0].transcript);
-    rec.onend = () => setListening(false);
+    fullTextRef.current = '';
+    rec.onresult = (e) => {
+      let final = '';
+      let interim = '';
+      for (let i = 0; i < e.results.length; i++) {
+        if (e.results[i].isFinal) {
+          final += e.results[i][0].transcript;
+        } else {
+          interim += e.results[i][0].transcript;
+        }
+      }
+      fullTextRef.current = final;
+      setInterimText(final + interim);
+    };
+    rec.onend = () => {
+      setListening(false);
+      const finalText = fullTextRef.current;
+      if (finalText.trim()) setTranscript(finalText.trim());
+    };
     rec.onerror = () => setListening(false);
     recRef.current = rec;
+    setInterimText('');
+    setTranscript('');
     setListening(true);
     rec.start();
   }, [lang]);
 
   const stopListening = useCallback(() => {
     if (recRef.current) recRef.current.stop();
-    setListening(false);
   }, []);
 
-  return { transcript, setTranscript, listening, startListening, stopListening };
+  return { transcript, setTranscript, interimText, listening, startListening, stopListening };
 }
 
 // ═══════════════════════════════════════════════════════
@@ -1259,7 +1280,9 @@ function App() {
   const [lang, setLang] = useState('en');
   const [selectedLoc, setSelectedLoc] = useState(null);
   const [selectedScen, setSelectedScen] = useState(null);
-  const [apiKey, setApiKey] = useState('');
+  const [apiKey, setApiKey] = useState(() => {
+    try { return localStorage.getItem('convomaster_apikey') || ''; } catch(e) { return ''; }
+  });
   const [showSettings, setShowSettings] = useState(false);
   const [tempKey, setTempKey] = useState('');
 
@@ -1272,7 +1295,7 @@ function App() {
   const chatEndRef = useRef(null);
 
   // Speech
-  const { transcript, setTranscript, listening, startListening, stopListening } = useSpeechRecognition(lang);
+  const { transcript, setTranscript, interimText, listening, startListening, stopListening } = useSpeechRecognition(lang);
   const [textInput, setTextInput] = useState('');
 
   // Auto-scroll
@@ -1280,9 +1303,38 @@ function App() {
     chatEndRef.current?.scrollIntoView({ behavior:'smooth' });
   }, [messages, aiLoading]);
 
-  // Transcript → input
+  // Transcript → 자동 전송
+  const sendRef = useRef(null);
+  sendRef.current = () => {
+    const text = textInput.trim();
+    if (!text || aiLoading) return;
+    if (!apiKey) { setShowSettings(true); return; }
+    setTextInput('');
+    setTranscript('');
+    const userMsg = { role:'user', content: text, parsed: null };
+    setMessages(prev => [...prev, userMsg]);
+    const newHistory = [...conversationHistory, { role:'user', content: text }];
+    setConversationHistory(newHistory);
+    setAiLoading(true);
+    callOpenAI(newHistory, apiKey, lang, selectedScen.c).then(aiText => {
+      const parsed = parseAIResponse(aiText);
+      const aiMsg = { role:'assistant', content: parsed.conversation, parsed };
+      setMessages(prev => [...prev, aiMsg]);
+      setConversationHistory(prev => [...prev, { role:'assistant', content: parsed.conversation }]);
+      if (parsed.feedback) setAllFeedback(prev => [...prev, { userText: text, feedback: parsed.feedback, suggestions: parsed.suggestions }]);
+      if (parsed.vocabulary) setAllVocabulary(prev => [...prev, parsed.vocabulary]);
+    }).catch(err => {
+      const errMsg = { role:'assistant', content: `⚠️ Error: ${err.message}`, parsed: { conversation:`⚠️ ${err.message}`, feedback:'', suggestions:'', vocabulary:'' } };
+      setMessages(prev => [...prev, errMsg]);
+    }).finally(() => setAiLoading(false));
+  };
+
   useEffect(() => {
-    if (transcript) setTextInput(transcript);
+    if (transcript) {
+      setTextInput(transcript);
+      // ⏹ 누른 후 transcript가 확정되면 자동 전송
+      setTimeout(() => { sendRef.current && sendRef.current(); }, 100);
+    }
   }, [transcript]);
 
   // Start conversation
@@ -1294,8 +1346,6 @@ function App() {
     setAllFeedback([]);
     setAllVocabulary([]);
     setScreen('conversation');
-    // 🔊 시나리오 첫 인사말 자동 재생
-    speak(scenario.s[lang], lang, apiKey);
   }
 
   // Send message
@@ -1321,8 +1371,6 @@ function App() {
       setConversationHistory(prev => [...prev, { role:'assistant', content: parsed.conversation }]);
       if (parsed.feedback) setAllFeedback(prev => [...prev, { userText: text, feedback: parsed.feedback, suggestions: parsed.suggestions }]);
       if (parsed.vocabulary) setAllVocabulary(prev => [...prev, parsed.vocabulary]);
-      // 🔊 AI 응답 자동 재생
-      speak(parsed.conversation, lang, apiKey);
     } catch (err) {
       const errMsg = { role:'assistant', content: `⚠️ Error: ${err.message}`, parsed: { conversation:`⚠️ ${err.message}`, feedback:'', suggestions:'', vocabulary:'' } };
       setMessages(prev => [...prev, errMsg]);
@@ -1338,7 +1386,9 @@ function App() {
 
   // Settings Modal
   function saveApiKey() {
-    setApiKey(tempKey.trim());
+    const key = tempKey.trim();
+    setApiKey(key);
+    try { localStorage.setItem('convomaster_apikey', key); } catch(e) {}
     setShowSettings(false);
   }
 
@@ -1463,11 +1513,12 @@ function App() {
               {listening?'⏹':'🎤'}
             </button>
             <input
-              style={S.textInput}
-              value={textInput}
+              style={{...S.textInput, ...(listening?{borderColor:'#ef4444'}:{})}}
+              value={listening ? (interimText || textInput) : textInput}
               onChange={e=>setTextInput(e.target.value)}
               onKeyDown={e=>e.key==='Enter'&&sendMessage()}
-              placeholder={lang==='en'?'Type or speak...':'入力または音声...'}
+              placeholder={listening ? (lang==='en'?'Listening...':'聞いています...') : (lang==='en'?'Type or speak...':'入力または音声...')}
+              readOnly={listening}
             />
             <button style={S.iconBtn(false,'#3b82f6')} onClick={sendMessage}>➤</button>
             <button style={S.endBtn} onClick={goReview}>
