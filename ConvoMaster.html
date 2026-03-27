@@ -1120,12 +1120,16 @@ function getBestVoice(lang) {
 window.speechSynthesis.onvoiceschanged = () => { cachedVoices = {}; };
 window.speechSynthesis.getVoices();
 
+let isSpeaking = false;
 function speak(text, lang) {
-  stopSpeaking();
+  if (isSpeaking) stopSpeaking();
+  isSpeaking = true;
   const u = new SpeechSynthesisUtterance(text);
   u.lang = lang === "en" ? "en-US" : "ja-JP";
   u.rate = 0.9;
   u.pitch = 1.0;
+  u.onend = () => { isSpeaking = false; };
+  u.onerror = () => { isSpeaking = false; };
   const voice = getBestVoice(lang);
   if (voice) u.voice = voice;
   window.speechSynthesis.speak(u);
@@ -1342,55 +1346,9 @@ function App() {
     chatEndRef.current?.scrollIntoView({ behavior:'smooth' });
   }, [messages, aiLoading]);
 
-  // Transcript → 자동 전송
+  // 메시지 전송 (통합 - 음성/텍스트 모두 이 함수 사용)
   const sendRef = useRef(null);
-  sendRef.current = () => {
-    const text = textInput.trim();
-    if (!text || aiLoading) return;
-    if (!apiKey) { setShowSettings(true); return; }
-    setTextInput('');
-    setTranscript('');
-    const userMsg = { role:'user', content: text, parsed: null };
-    setMessages(prev => [...prev, userMsg]);
-    const newHistory = [...conversationHistory, { role:'user', content: text }];
-    setConversationHistory(newHistory);
-    setAiLoading(true);
-    callOpenAI(newHistory, apiKey, lang, selectedScen.c).then(aiText => {
-      const parsed = parseAIResponse(aiText);
-      const aiMsg = { role:'assistant', content: parsed.conversation, parsed };
-      setMessages(prev => [...prev, aiMsg]);
-      setConversationHistory(prev => [...prev, { role:'assistant', content: parsed.conversation }]);
-      if (parsed.feedback) setAllFeedback(prev => [...prev, { userText: text, feedback: parsed.feedback, suggestions: parsed.suggestions }]);
-      if (parsed.vocabulary) setAllVocabulary(prev => [...prev, parsed.vocabulary]);
-      speak(parsed.conversation, lang);
-    }).catch(err => {
-      const errMsg = { role:'assistant', content: `⚠️ Error: ${err.message}`, parsed: { conversation:`⚠️ ${err.message}`, feedback:'', suggestions:'', vocabulary:'' } };
-      setMessages(prev => [...prev, errMsg]);
-    }).finally(() => setAiLoading(false));
-  };
 
-  useEffect(() => {
-    if (transcript) {
-      setTextInput(transcript);
-      // ⏹ 누른 후 transcript가 확정되면 자동 전송
-      setTimeout(() => { sendRef.current && sendRef.current(); }, 100);
-    }
-  }, [transcript]);
-
-  // Start conversation
-  function startConversation(scenario) {
-    setSelectedScen(scenario);
-    const firstMsg = { role:'assistant', content: scenario.s[lang], parsed: { conversation: scenario.s[lang], feedback:'', suggestions:'', vocabulary:'' } };
-    setMessages([firstMsg]);
-    setConversationHistory([{ role:'assistant', content: scenario.s[lang] }]);
-    setAllFeedback([]);
-    setAllVocabulary([]);
-    setScreen('conversation');
-    // 첫 인사말 자동 재생
-    setTimeout(() => speak(scenario.s[lang], lang), 300);
-  }
-
-  // Send message
   async function sendMessage() {
     const text = textInput.trim();
     if (!text || aiLoading) return;
@@ -1419,6 +1377,28 @@ function App() {
       setMessages(prev => [...prev, errMsg]);
     }
     setAiLoading(false);
+  }
+
+  sendRef.current = sendMessage;
+
+  // Transcript → 자동 전송
+  useEffect(() => {
+    if (transcript) {
+      setTextInput(transcript);
+      setTimeout(() => { sendRef.current && sendRef.current(); }, 100);
+    }
+  }, [transcript]);
+
+  // Start conversation
+  function startConversation(scenario) {
+    setSelectedScen(scenario);
+    const firstMsg = { role:'assistant', content: scenario.s[lang], parsed: { conversation: scenario.s[lang], feedback:'', suggestions:'', vocabulary:'' } };
+    setMessages([firstMsg]);
+    setConversationHistory([{ role:'assistant', content: scenario.s[lang] }]);
+    setAllFeedback([]);
+    setAllVocabulary([]);
+    setScreen('conversation');
+    setTimeout(() => speak(scenario.s[lang], lang), 300);
   }
 
   // Navigate
@@ -1455,7 +1435,7 @@ function App() {
             {screen === 'conversation' && selectedScen && selectedScen.t[lang]}
             {screen === 'review' && (lang==='en'?'Review':'復習')}
           </span>
-          <button style={S.settingsBtn} onClick={() => { setTempKey(apiKey); setShowSettings(true); }}>⚙️</button>
+          <button style={S.settingsBtn} onTouchEnd={(e)=>{e.preventDefault();setTempKey(apiKey);setShowSettings(true)}} onClick={() => { setTempKey(apiKey); setShowSettings(true); }}>⚙️</button>
         </div>
       )}
 
@@ -1473,7 +1453,7 @@ function App() {
           </div>
           <div style={S.statCards}>
             <div style={S.statCard}><div style={S.statNum}>30</div><div style={S.statLabel}>{lang==='en'?'Locations':'場所'}</div></div>
-            <div style={S.statCard}><div style={S.statNum}>100</div><div style={S.statLabel}>{lang==='en'?'Scenarios':'シナリオ'}</div></div>
+            <div style={S.statCard}><div style={S.statNum}>900</div><div style={S.statLabel}>{lang==='en'?'Scenarios':'シナリオ'}</div></div>
           </div>
           <div style={S.apiStatus(!!apiKey)}>
             {apiKey ? '✅ API Key 설정 완료' : '⚠️ API Key를 설정해주세요'}
@@ -1481,7 +1461,7 @@ function App() {
           <button style={S.startBtn} onClick={goLocations}>
             {lang==='en'?'Start Practice':'練習を始める'} →
           </button>
-          <button style={{...S.startBtn, background:'#334155', marginTop:'0'}} onClick={() => { setTempKey(apiKey); setShowSettings(true); }}>
+          <button style={{...S.startBtn, background:'#334155', marginTop:'0'}} onTouchEnd={(e)=>{e.preventDefault();setTempKey(apiKey);setShowSettings(true)}} onClick={() => { setTempKey(apiKey); setShowSettings(true); }}>
             ⚙️ API Key 설정
           </button>
         </div>
@@ -1576,15 +1556,19 @@ function App() {
 
       {/* SETTINGS MODAL */}
       {showSettings && (
-        <div style={S.overlay} onClick={()=>setShowSettings(false)}>
-          <div style={S.modal} onClick={e=>e.stopPropagation()}>
+        <div style={S.overlay} onMouseDown={(e)=>{if(e.target===e.currentTarget)setShowSettings(false)}} onTouchEnd={(e)=>{if(e.target===e.currentTarget){e.preventDefault();setShowSettings(false)}}}>
+          <div style={S.modal} onMouseDown={e=>e.stopPropagation()} onTouchEnd={e=>e.stopPropagation()}>
             <div style={S.modalTitle}>⚙️ OpenAI API Key 설정</div>
             <input
               style={S.modalInput}
-              type="password"
+              type="text"
               value={tempKey}
               onChange={e=>setTempKey(e.target.value)}
               placeholder="sk-..."
+              autoComplete="off"
+              autoCorrect="off"
+              autoCapitalize="off"
+              spellCheck="false"
             />
             <div style={S.modalHint}>
               💡 API Key는 브라우저에만 저장되며 서버로 전송되지 않습니다.<br/>
@@ -1592,8 +1576,8 @@ function App() {
               OpenAI에서 API Key를 발급받으세요: platform.openai.com
             </div>
             <div style={S.modalBtnRow}>
-              <button style={S.modalBtn(false)} onClick={()=>setShowSettings(false)}>취소</button>
-              <button style={S.modalBtn(true)} onClick={saveApiKey}>저장</button>
+              <button style={S.modalBtn(false)} onTouchEnd={(e)=>{e.preventDefault();setShowSettings(false)}} onClick={()=>setShowSettings(false)}>취소</button>
+              <button style={S.modalBtn(true)} onTouchEnd={(e)=>{e.preventDefault();saveApiKey()}} onClick={saveApiKey}>저장</button>
             </div>
           </div>
         </div>
